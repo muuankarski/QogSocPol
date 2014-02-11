@@ -330,6 +330,58 @@ shinyServer(function(input, output) {
   output$relaplot <- renderPlot({
     print(plotInputR())
   })
+
+  ## Map plot
+  
+  datasetInputMap <- reactive({
+    #varx <- datPlot$perGini
+    varx <- dat[, input$variableX]
+    cntry <- as.character(dat$cname)
+    contName <- as.character(dat$contName)
+    year <- dat$year
+    datPlot <- data.frame(varx,cntry,year,contName)
+    datPlot <- datPlot[!is.na(datPlot$varx),]
+    datPlot <- datPlot[!is.na(datPlot$cntry),]
+    datPlot <- merge(datPlot, aggregate(year ~ cntry, datPlot, max),
+                     by=c("year","cntry"))
+    
+  })
+  
+  plotInputMap <- reactive({
+    
+    datPlot <- datasetInputMap()
+    
+    # merge the data using rworldmap
+    library(rworldmap)
+    shape <- joinCountryData2Map(datPlot,joinCode = "NAME",nameJoinColumn = "cntry")
+    # fortify the SpatialPolygonDataFrame into data.frame
+    library(ggplot2)
+    shape$id <- rownames(shape@data)
+    map.points <- fortify(shape, region = "id")
+    map.df <- merge(map.points, shape, by = "id")
+    # order the data for smooth plotting
+    map.df <- map.df[order(map.df$order), ]
+    # and plot
+    cyear <- stats:::aggregate.formula(cbind(long, lat) ~ cntry+year, data=map.df, mean)
+    
+    library(ggplot2)
+    ggplot(map.df, aes(long,lat,group=group)) +
+      geom_polygon(aes(fill=varx)) +
+      geom_polygon(data = map.df, aes(long,lat), 
+                   fill=NA, 
+                   color = "white",
+                   size=0.1) + 
+      theme(legend.position="top") +
+      guides(fill = guide_legend(keywidth = 2, keyheight = 1)) +
+      labs(title=paste("Latest year",", indicator",input$variableX)) +
+      geom_text(data=cyear, aes(long, lat, label = year, group=cntry), 
+                size=3, color="white")
+    
+  })
+  
+  output$map <- renderPlot({
+    print(plotInputMap())
+  })
   
   
   #******************************#
@@ -364,6 +416,14 @@ shinyServer(function(input, output) {
     content = function(file) {
       png(file, width=800, height=800,res=72)
       print(plotInputR())
+      dev.off()
+    })
+  
+  output$downloadPlotMap <- downloadHandler(
+    filename = function() { paste("varx_",input$variableX,Sys.time(),'.png', sep='') },
+    content = function(file) {
+      png(file, width=2500, height=2000,res=72)
+      print(plotInputMap())
       dev.off()
     })
   
